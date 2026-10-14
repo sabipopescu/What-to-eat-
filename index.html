@@ -41,6 +41,15 @@ input[type=text]{width:100%;font:inherit;color:var(--ink);background:var(--bg);b
 .hint{color:var(--mute);font-size:14px;margin:6px 0 14px}
 .dt{display:flex;align-items:center;gap:8px;font-size:14px}
 .dt input{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:6px 8px}
+details{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}
+summary{cursor:pointer;font-weight:600;font-size:14px}
+.dish{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px;font-size:14px}
+.dish input{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:6px 8px;min-width:0}
+.dish input[type=number]{width:88px}
+.dish input[type=text]{flex:1}
+.trl{text-align:right;font-size:12px;margin-top:2px}
+.tr.up{color:var(--b)}
+.tr.dn{color:var(--go)}
 .pick{border-width:2px;border-color:var(--go)}
 .pick h3{font-size:24px}
 .pick.rest{border-width:1px;border-color:var(--line)}
@@ -101,6 +110,26 @@ function dots(person, cls, p) {
     [1,2,3,4,5].map(v => `<button class="${(person ? p.b : p.a) >= v ? 'on' : ''}" data-rate="${p.id}" data-who="${person}" data-v="${v}" aria-label="${v} of 5">${v}</button>`).join('') + '</div>';
 }
 
+const openIds = new Set();
+const money = v => '$' + (+v).toFixed(2);
+const lastOf = h => h && h.length ? h[h.length - 1] : null;
+function trend(h) {
+  if (!h || h.length < 2) return '';
+  const a = h[h.length - 2], b = h[h.length - 1], d = b.v - a.v;
+  if (!d) return '';
+  const when = new Date(b.d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return `<div class="trl"><span class="tr ${d > 0 ? 'up' : 'dn'}">${d > 0 ? 'Up' : 'Down'} ${money(Math.abs(d))} on ${when}</span></div>`;
+}
+const feeChip = p => { const f = lastOf(p.fee); return f ? `<span>Delivery ${money(f.v)}</span>` : ''; };
+function costs(p) {
+  const f = lastOf(p.fee);
+  const dishes = (p.dishes || []).map(d => { const l = lastOf(d.h); return `<div class="dish"><span class="nm">${esc(d.name)}</span><span><input type="number" step="0.01" min="0" inputmode="decimal" data-dish="${p.id}|${d.id}" value="${l ? l.v : ''}" placeholder="Price" aria-label="Price of ${esc(d.name)}"> <button class="link" data-deldish="${p.id}|${d.id}" aria-label="Remove ${esc(d.name)}">Remove</button></span></div>${trend(d.h)}`; }).join('');
+  return `<details data-open="${p.id}" ${openIds.has(p.id) ? 'open' : ''}><summary>Dishes and delivery${f ? ', fee ' + money(f.v) : ''}</summary>
+    <div class="dish"><span class="nm">Delivery fee</span><input type="number" step="0.01" min="0" inputmode="decimal" data-fee="${p.id}" value="${f ? f.v : ''}" placeholder="Fee" aria-label="Delivery fee"></div>${trend(p.fee)}
+    ${dishes}
+    <div class="dish"><input type="text" id="dn-${p.id}" placeholder="Favorite dish" maxlength="40" aria-label="Dish name"><input type="number" step="0.01" min="0" inputmode="decimal" id="dp-${p.id}" placeholder="Price" aria-label="Dish price"><button class="btn small" data-adddish="${p.id}">Add</button></div></details>`;
+}
+
 function renderPlaces() {
   const el = $('v-places');
   const list = S.places.map(p => `
@@ -108,7 +137,7 @@ function renderPlaces() {
       <h3>${esc(p.name)}</h3>
       <div class="row"><span class="who" style="color:var(--a)">${esc(S.names[0])}</span>${dots(0,'a',p)}</div>
       <div class="row"><span class="who" style="color:var(--b)">${esc(S.names[1])}</span>${dots(1,'b',p)}</div>
-      <div class="meta"><label class="dt">Last ordered <input type="date" data-date="${p.id}" value="${p.last ? toInput(p.last) : ''}" max="${toInput(new Date())}"></label><span>${ago(daysSince(p.last))}</span></div><div class="meta" style="justify-content:flex-end;margin-top:4px">
+      ${costs(p)}<div class="meta"><label class="dt">Last ordered <input type="date" data-date="${p.id}" value="${p.last ? toInput(p.last) : ''}" max="${toInput(new Date())}"></label><span>${ago(daysSince(p.last))}</span></div><div class="meta" style="justify-content:flex-end;margin-top:4px">
         <span><button class="link" data-went="${p.id}">We went today</button><button class="link" data-del="${p.id}">Remove</button></span></div>
     </div>`).join('');
   el.innerHTML = `
@@ -137,7 +166,7 @@ function renderPick() {
   el.innerHTML = picks.map((p, i) => `
     <div class="card pick ${i ? 'rest' : ''}">
       <h3>${esc(p.name)}</h3>
-      <div class="why">${reasons(p).map(r => `<span>${r}</span>`).join('')}</div>
+      <div class="why">${reasons(p).map(r => `<span>${r}</span>`).join('')}${feeChip(p)}</div>
       <div class="split"><span style="color:var(--a)">${esc(S.names[0])} <b>${p.a}/5</b></span><span style="color:var(--b)">${esc(S.names[1])} <b>${p.b}/5</b></span><span>${ago(daysSince(p.last))}</span></div>
       <button class="btn ${i ? 'ghost' : ''} small" data-went="${p.id}" data-fromPick="1">We're going here</button>
     </div>`).join('') + `<button class="btn ghost big" id="doPick">Shuffle again</button>`;
@@ -190,6 +219,39 @@ document.addEventListener('change', e => {
   }
 });
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'newName') $('addBtn').click(); });
+document.addEventListener('toggle', e => {
+  const id = e.target.dataset && e.target.dataset.open;
+  if (id) { e.target.open ? openIds.add(id) : openIds.delete(id); }
+}, true);
+document.addEventListener('click', e => {
+  const t = e.target.closest('button'); if (!t) return;
+  if (t.dataset.adddish) {
+    const id = t.dataset.adddish, p = S.places.find(x => x.id === id);
+    const n = $('dn-' + id).value.trim(), v = parseFloat($('dp-' + id).value);
+    if (!n) { $('dn-' + id).focus(); return; }
+    (p.dishes = p.dishes || []).push({ id: Date.now().toString(36), name: n, h: isNaN(v) ? [] : [{ v, d: new Date().toISOString() }] });
+    openIds.add(id); save(); renderPlaces();
+  }
+  if (t.dataset.deldish) {
+    const [pid, did] = t.dataset.deldish.split('|'), p = S.places.find(x => x.id === pid);
+    p.dishes = p.dishes.filter(d => d.id !== did); save(); renderPlaces();
+  }
+});
+document.addEventListener('change', e => {
+  const t = e.target, v = parseFloat(t.value);
+  if (!(t.dataset.dish || t.dataset.fee) || isNaN(v)) return;
+  let h;
+  if (t.dataset.dish) {
+    const [pid, did] = t.dataset.dish.split('|'), p = S.places.find(x => x.id === pid);
+    h = p.dishes.find(d => d.id === did).h;
+  } else {
+    const p = S.places.find(x => x.id === t.dataset.fee);
+    h = p.fee = p.fee || [];
+  }
+  const l = lastOf(h);
+  if (l && l.v === v) return;
+  h.push({ v, d: new Date().toISOString() }); save(); renderPlaces();
+});
 
 renderPick(); renderPlaces();
 </script>
